@@ -26,21 +26,36 @@
             padding: 24px;
         }
         .barra {
-            background: linear-gradient(90deg, #091f3f 0%, var(--azul-industrial) 45%, var(--azul-acento) 100%);
+            background: linear-gradient(90deg, #081f3e 0%, #0d4a82 48%, #0e60a8 100%);
             color: white;
-            padding: 14px 24px;
+            padding: 16px 28px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 12px;
             flex-wrap: wrap;
+            box-shadow: 0 10px 28px rgba(7, 32, 64, 0.18);
         }
         .barra a {
             color: white;
             text-decoration: none;
-            margin-right: 16px;
+            margin-right: 12px;
             font-weight: 700;
             letter-spacing: 0.2px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            transition: background 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+        }
+        .barra a:hover {
+            background: rgba(255, 255, 255, 0.16);
+            transform: translateY(-1px);
+            opacity: 0.98;
+        }
+        .barra nav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
         }
         .tarjeta {
             background: white;
@@ -76,8 +91,8 @@
         }
         .boton {
             border: 0;
-            border-radius: 6px;
-            padding: 8px 12px;
+            border-radius: 8px;
+            padding: 10px 14px;
             cursor: pointer;
             color: white;
             background: var(--azul-acento);
@@ -85,6 +100,12 @@
             display: inline-block;
             font-size: 14px;
             font-weight: 700;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+        }
+        .boton:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 20px rgba(15, 76, 147, 0.12);
+            opacity: 0.98;
         }
         .boton.secundario { background: #48566d; }
         .boton.alerta { background: var(--rojo-alerta); }
@@ -136,11 +157,11 @@
         </div>
         @auth
             <nav>
-                <a href="{{ route('dashboard') }}">Dashboard</a>
+                <a href="{{ route('dashboard') }}">Inicio</a>
                 <a href="{{ route('usuarios.index') }}">Usuarios</a>
                 <a href="{{ route('clientes.index') }}">Clientes</a>
                 <a href="{{ route('empleados.index') }}">Empleados</a>
-                <a href="{{ route('nominas.index') }}">Nominas</a>
+                <a href="{{ route('nominas.index') }}">Nóminas</a>
                 <form method="POST" action="{{ route('logout') }}" style="display:inline;">
                     @csrf
                     <button class="boton alerta" type="submit">Salir</button>

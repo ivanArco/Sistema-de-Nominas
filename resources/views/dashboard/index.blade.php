@@ -2,9 +2,9 @@
 
 @section('contenido')
     <div class="tarjeta" style="background: linear-gradient(120deg, #0a315f 0%, #124a89 56%, #2d77b8 100%); color:white; border:0;">
-        <h1 style="margin-top:0; font-size:28px;">Dashboard de Nomina Empresarial</h1>
-        <p style="max-width: 760px; margin-bottom:0; opacity:0.94;">
-            Vista ejecutiva para operacion de nomina de alto volumen en Mexico. Permite control rapido de personal, incidencias y dispersion de pago.
+        <h1 style="margin-top:0; font-size:28px;">Inicio</h1>
+        <p style="max-width: 760px; margin-bottom:0; opacity:0.9; line-height:1.7;">
+            Resumen de operación y acceso rápido a las funciones principales del sistema. Aquí encontrarás la información clave para comenzar.
         </p>
     </div>
 
