@@ -150,13 +150,16 @@ Proveer una solucion integral para administrar y calcular nomina con controles d
 
 ### Organizacion del proyecto
 
-- app/app/Http/Controllers: controladores por modulo.
-- app/app/Models: entidades y relaciones Eloquent.
-- app/app/Services: logica de negocio especializada.
-- app/database/migrations: evolucion del esquema.
-- app/database/seeders: datos base para arranque.
-- app/resources/views: interfaz por modulo.
-- app/routes/web.php: rutas y permisos.
+- servidor/app/Http/Controllers: controladores por modulo.
+- servidor/app/Models: entidades y relaciones Eloquent.
+- servidor/app/Services: logica de negocio especializada.
+- servidor/database/migrations: evolucion del esquema.
+- servidor/database/seeders: datos base para arranque.
+- servidor/resources/views: interfaz por modulo.
+- servidor/routes/web.php: rutas y permisos.
+- interfaz/: recursos de la capa de presentacion.
+- base_de_datos/: esquema y respaldos de datos.
+- documentacion/: manuales y referencias del proyecto.
 
 ---
 
@@ -198,6 +201,107 @@ Roles operativos definidos:
 - SECRETARIA
 
 Se mantiene compatibilidad con roles legacy mediante normalizacion automatica.
+
+### Matriz de permisos por tipo de usuario
+
+#### EMPLEADO
+
+Es el usuario con menos permisos.
+
+Puede:
+
+- Ver su perfil.
+- Actualizar datos personales (telefono, direccion, correo).
+- Consultar su historial de nominas.
+- Descargar recibos de nomina en PDF.
+- Consultar vacaciones disponibles.
+- Solicitar permisos o vacaciones.
+- Cambiar su contrasena.
+
+No puede:
+
+- Ver informacion de otros empleados.
+- Modificar nominas.
+- Registrar asistencias.
+
+#### VENDEDOR
+
+Ademas de todo lo que hace un empleado:
+
+Puede:
+
+- Registrar ventas.
+- Consultar sus ventas.
+- Ver comisiones.
+- Ver bonos por ventas.
+- Consultar metas de ventas.
+
+#### SECRETARIA
+
+Puede:
+
+- Registrar empleados.
+- Editar informacion de empleados.
+- Gestionar expedientes.
+- Registrar documentos.
+- Registrar incapacidades.
+- Registrar permisos.
+- Gestionar contratos.
+- Consultar reportes administrativos.
+
+No puede:
+
+- Calcular nomina.
+- Modificar salarios.
+
+#### SUPERVISOR
+
+Se encarga del personal de su area.
+
+Puede:
+
+- Ver los empleados bajo su supervision.
+- Registrar asistencias.
+- Registrar retardos.
+- Registrar faltas.
+- Registrar horas extra.
+- Aprobar permisos.
+- Aprobar vacaciones.
+- Consultar reportes de asistencia.
+
+#### JEFE_AREA
+
+Tiene permisos mas amplios que un supervisor.
+
+Puede:
+
+- Todo lo del Supervisor.
+- Aprobar definitivamente vacaciones.
+- Autorizar horas extra.
+- Autorizar bonos.
+- Consultar reportes del departamento.
+- Evaluar desempeno del personal.
+
+#### CONTADOR
+
+Puede:
+
+- Calcular nomina.
+- Registrar percepciones.
+- Registrar deducciones.
+- Calcular ISR.
+- Calcular IMSS (si aplica).
+- Generar recibos PDF.
+- Generar reportes financieros.
+- Consultar historial de pagos.
+- Autorizar el cierre de la nomina.
+
+### Nota tecnica de implementacion
+
+- Los permisos se controlan por rol en el modelo de usuario, en la matriz central de permisos.
+- Las rutas se protegen con middleware de permiso para habilitar solo los modulos autorizados.
+- El menu lateral muestra solo las opciones para las que el usuario autenticado tiene permiso.
+- Algunas funciones del texto funcional (por ejemplo metas de ventas, evaluacion de desempeno o flujo de autorizacion final) dependen de modulos especificos y pueden requerir pantallas adicionales para quedar 1:1.
 
 ---
 
@@ -393,11 +497,103 @@ Por ello, el contenido representa el estado real implementado del sistema en el 
 
 ## Credenciales de acceso demo
 
-Usuario supervisor creado por seeder:
+Todos los usuarios pueden iniciar sesion con CURP en /login.
 
-- Usuario: supervisor1
-- Correo: supervisor@sistema.local
-- Contrasena: Supervisor123!
+Contrasenas de cuentas de area:
+
+- SUPERVISOR: Supervisor123!
+- JEFE_AREA: JefeArea123!
+
+Contrasena de empleados demo:
+
+- EMPLEADO: Empleado123!
+
+### Cuentas por area
+
+| Area | Rol | Usuario | Email | CURP |
+|---|---|---|---|---|
+| Finanzas | SUPERVISOR | supervisor_finanzas | supervisor.finanzas@sistema.local | PIMF900202HDFRNN12 |
+| Finanzas | JEFE_AREA | jefe_finanzas | jefe.finanzas@sistema.local | SOQF910606HDFNNS22 |
+| Operaciones | SUPERVISOR | supervisor_demo | supervisor@sistema.local | RANS880303MDFKRL03 |
+| Operaciones | JEFE_AREA | jefe_operaciones | jefe.operaciones@sistema.local | BEIO920707HDFPRS23 |
+| Recursos Humanos | SUPERVISOR | supervisor_rh | supervisor.rh@sistema.local | MECR890101MDFHSL11 |
+| Recursos Humanos | JEFE_AREA | jefe_rh | jefe.rh@sistema.local | MONJ900505HDFRHS21 |
+| Tecnologia | SUPERVISOR | supervisor_tecnologia | supervisor.tecnologia@sistema.local | SORT920404MDFLNL14 |
+| Tecnologia | JEFE_AREA | jefe_tecnologia | jefe.tecnologia@sistema.local | NALT940909MDFTCN25 |
+| Ventas | SUPERVISOR | supervisor_ventas | supervisor.ventas@sistema.local | LURV910303MDFTNS13 |
+| Ventas | JEFE_AREA | jefe_ventas | jefe.ventas@sistema.local | CARV930808MDFVTS24 |
+
+### Empleados por area (10 por area)
+
+Finanzas:
+
+- LORA900101MDFPRN01
+- CALP970808HDFRST08
+- FINA990820HDF19A12
+- FINA800921HDF20A13
+- FINA811022HDF21A14
+- FINA821123HDF22A15
+- FINA831224HDF23A16
+- FINA840125HDF24A17
+- FINA850226HDF25A18
+- FINA860327HDF26A19
+
+Operaciones:
+
+- MESC910202HDFNTR02
+- VEIR950606HDFBGS06
+- OPER870428HDF27A12
+- OPER880501HDF28A13
+- OPER890602HDF29A14
+- OPER900703HDF30A15
+- OPER910804HDF31A16
+- OPER920905HDF32A17
+- OPER931006HDF33A18
+- OPER941107HDF34A19
+
+Recursos Humanos:
+
+- GODL920303MDFMZS03
+- SAMD960707MDFNRT07
+- RECU911212HDF11A12
+- RECU920113HDF12A13
+- RECU930214HDF13A14
+- RECU940315HDF14A15
+- RECU950416HDF15A16
+- RECU960517HDF16A17
+- RECU970618HDF17A18
+- RECU980719HDF18A19
+
+Tecnologia:
+
+- OENM940505MDFRVR05
+- RATM991010HDFMNG10
+- TECN830816HDF43A12
+- TECN840917HDF44A13
+- TECN851018HDF45A14
+- TECN861119HDF46A15
+- TECN871220HDF47A16
+- TECN880121HDF48A17
+- TECN890222HDF49A18
+- TECN900323HDF50A19
+
+Ventas:
+
+- HEPJ930404HDFRZG04
+- PIFE980909MDFNLS09
+- VENT951208HDF35A12
+- VENT960109HDF36A13
+- VENT970210HDF37A14
+- VENT980311HDF38A15
+- VENT990412HDF39A16
+- VENT800513HDF40A17
+- VENT810614HDF41A18
+- VENT820715HDF42A19
+
+Comandos para crear o actualizar usuarios demo:
+
+- php artisan db:seed --class=EmpleadoSeeder
+- php artisan db:seed --class=UsuariosRolesSeeder
 
 ---
 

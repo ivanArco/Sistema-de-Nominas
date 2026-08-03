@@ -1,0 +1,125 @@
+CREATE DATABASE IF NOT EXISTS nominas_db
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+USE nominas_db;
+
+CREATE TABLE departamentos (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL UNIQUE,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE puestos (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL UNIQUE,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE empleados (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  numero_empleado VARCHAR(30) NOT NULL UNIQUE,
+  nombre VARCHAR(80) NOT NULL,
+  apellido_paterno VARCHAR(80) NOT NULL,
+  apellido_materno VARCHAR(80) NULL,
+  curp CHAR(18) NOT NULL UNIQUE,
+  rfc VARCHAR(13) NOT NULL UNIQUE,
+  nss VARCHAR(20) NOT NULL UNIQUE,
+  correo VARCHAR(120) NULL,
+  telefono VARCHAR(20) NULL,
+  fecha_ingreso DATE NOT NULL,
+  fecha_baja DATE NULL,
+  tipo_contrato VARCHAR(50) NOT NULL,
+  jornada VARCHAR(50) NOT NULL,
+  salario_diario DECIMAL(12,2) NOT NULL,
+  salario_diario_integrado DECIMAL(12,2) NOT NULL,
+  id_departamento BIGINT UNSIGNED NOT NULL,
+  id_puesto BIGINT UNSIGNED NOT NULL,
+  estatus ENUM('ACTIVO','BAJA') NOT NULL DEFAULT 'ACTIVO',
+  creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_empleado_departamento FOREIGN KEY (id_departamento) REFERENCES departamentos(id),
+  CONSTRAINT fk_empleado_puesto FOREIGN KEY (id_puesto) REFERENCES puestos(id)
+);
+
+CREATE TABLE periodos_nomina (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  anio SMALLINT NOT NULL,
+  numero_periodo SMALLINT NOT NULL,
+  tipo_periodo ENUM('SEMANAL','CATORCENAL','QUINCENAL','MENSUAL') NOT NULL,
+  fecha_inicio DATE NOT NULL,
+  fecha_fin DATE NOT NULL,
+  fecha_pago DATE NOT NULL,
+  estatus ENUM('ABIERTO','CALCULADO','CERRADO','TIMBRADO') NOT NULL DEFAULT 'ABIERTO',
+  creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_periodo (anio, numero_periodo, tipo_periodo)
+);
+
+CREATE TABLE conceptos_nomina (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  clave VARCHAR(20) NOT NULL UNIQUE,
+  nombre VARCHAR(120) NOT NULL,
+  tipo ENUM('PERCEPCION','DEDUCCION','OTRO_PAGO') NOT NULL,
+  gravado TINYINT(1) NOT NULL DEFAULT 1,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE incidencias (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id_empleado BIGINT UNSIGNED NOT NULL,
+  id_periodo BIGINT UNSIGNED NOT NULL,
+  tipo ENUM('FALTA','RETARDO','HORA_EXTRA','BONO','INCAPACIDAD','VACACIONES','OTRO') NOT NULL,
+  descripcion VARCHAR(255) NULL,
+  cantidad DECIMAL(10,2) NOT NULL DEFAULT 0,
+  monto DECIMAL(12,2) NOT NULL DEFAULT 0,
+  creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_incidencia_empleado FOREIGN KEY (id_empleado) REFERENCES empleados(id),
+  CONSTRAINT fk_incidencia_periodo FOREIGN KEY (id_periodo) REFERENCES periodos_nomina(id),
+  INDEX idx_incidencia_empleado_periodo (id_empleado, id_periodo)
+);
+
+CREATE TABLE nominas (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id_empleado BIGINT UNSIGNED NOT NULL,
+  id_periodo BIGINT UNSIGNED NOT NULL,
+  dias_pagados DECIMAL(6,2) NOT NULL DEFAULT 0,
+  total_percepciones DECIMAL(14,2) NOT NULL DEFAULT 0,
+  total_deducciones DECIMAL(14,2) NOT NULL DEFAULT 0,
+  neto_pagado DECIMAL(14,2) NOT NULL DEFAULT 0,
+  estatus ENUM('BORRADOR','CALCULADA','PAGADA','CANCELADA') NOT NULL DEFAULT 'BORRADOR',
+  creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_nomina_empleado FOREIGN KEY (id_empleado) REFERENCES empleados(id),
+  CONSTRAINT fk_nomina_periodo FOREIGN KEY (id_periodo) REFERENCES periodos_nomina(id),
+  UNIQUE KEY uq_nomina_empleado_periodo (id_empleado, id_periodo)
+);
+
+CREATE TABLE nomina_detalle (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id_nomina BIGINT UNSIGNED NOT NULL,
+  id_concepto BIGINT UNSIGNED NOT NULL,
+  cantidad DECIMAL(10,2) NOT NULL DEFAULT 1,
+  importe DECIMAL(14,2) NOT NULL,
+  observaciones VARCHAR(255) NULL,
+  creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_nomina_detalle_nomina FOREIGN KEY (id_nomina) REFERENCES nominas(id) ON DELETE CASCADE,
+  CONSTRAINT fk_nomina_detalle_concepto FOREIGN KEY (id_concepto) REFERENCES conceptos_nomina(id),
+  INDEX idx_detalle_nomina (id_nomina),
+  INDEX idx_detalle_concepto (id_concepto)
+);
+
+CREATE TABLE usuarios_sistema (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  usuario VARCHAR(50) NOT NULL UNIQUE,
+  nombre VARCHAR(80) NOT NULL,
+  apellido_paterno VARCHAR(80) NOT NULL,
+  apellido_materno VARCHAR(80) NULL,
+  correo VARCHAR(120) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  rol ENUM('ADMIN','NOMINISTA','SUPERVISOR','CONSULTA') NOT NULL DEFAULT 'CONSULTA',
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
