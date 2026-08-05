@@ -116,7 +116,14 @@ class SolicitudAprobacionController extends Controller
         /** @var User|null $usuario */
         $usuario = Auth::user();
 
-        if (!$usuario || $usuario->rolNormalizado() !== 'SUPERVISOR') {
+        if (!$usuario) {
+            return;
+        }
+
+        $rol = $usuario->rolNormalizado();
+        $restringidoPorArea = $rol === 'SUPERVISOR' || ($rol === 'JEFE_AREA' && !$usuario->esAdministrador());
+
+        if (!$restringidoPorArea) {
             return;
         }
 

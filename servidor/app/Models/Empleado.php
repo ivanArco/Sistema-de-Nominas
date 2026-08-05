@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SalarioIntegradoService;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
@@ -48,6 +49,20 @@ class Empleado extends Model
         'semanas_cotizadas' => 'decimal:2',
         'fondo_retiro_acumulado' => 'decimal:2',
     ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (Empleado $empleado): void {
+            if (!config('nomina.calcular_salario_integrado_automatico', true)) {
+                return;
+            }
+
+            $salarioDiario = (float) ($empleado->sal_dia ?? 0);
+            $fechaIngreso = $empleado->f_ingreso;
+
+            $empleado->sal_int = SalarioIntegradoService::calcular($salarioDiario, $fechaIngreso);
+        });
+    }
 
     public function departamento(): BelongsTo
     {

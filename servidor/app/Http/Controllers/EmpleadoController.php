@@ -198,7 +198,7 @@ class EmpleadoController extends Controller
             'jornada' => ['required', 'string', 'max:50'],
             'tipo_pago' => ['required', Rule::in(['SEMANAL', 'QUINCENAL', 'MENSUAL'])],
             'sal_dia' => ['required', 'numeric', 'min:0'],
-            'sal_int' => ['required', 'numeric', 'min:0'],
+            'sal_int' => ['nullable', 'numeric', 'min:0'],
             'depto_id' => ['required', 'integer', 'exists:departamentos,id'],
             'puesto_id' => ['required', 'integer', 'exists:puestos,id'],
             'porcentaje_infonavit' => ['nullable', 'numeric', 'min:0', 'max:30'],
@@ -345,7 +345,17 @@ class EmpleadoController extends Controller
     {
         $usuario = $request->user();
 
-        return $usuario instanceof User && $usuario->rolNormalizado() === 'SUPERVISOR';
+        if (!$usuario instanceof User) {
+            return false;
+        }
+
+        $rol = $usuario->rolNormalizado();
+
+        if ($rol === 'SUPERVISOR') {
+            return true;
+        }
+
+        return $rol === 'JEFE_AREA' && !$usuario->esAdministrador();
     }
 
     private function esSecretaria(Request $request): bool
@@ -403,7 +413,7 @@ class EmpleadoController extends Controller
         }
 
         $areaSupervisor = $this->resolverAreaSupervisor($request);
-        abort_if($areaSupervisor === null, 403, 'Tu usuario supervisor no tiene area asignada.');
+        abort_if($areaSupervisor === null, 403, 'Tu usuario no tiene area asignada para gestion.');
 
         $nombreDepartamento = $empleado->relationLoaded('departamento')
             ? (string) ($empleado->departamento->nombre ?? '')
@@ -419,7 +429,7 @@ class EmpleadoController extends Controller
         }
 
         $areaSupervisor = $this->resolverAreaSupervisor($request);
-        abort_if($areaSupervisor === null, 403, 'Tu usuario supervisor no tiene area asignada.');
+        abort_if($areaSupervisor === null, 403, 'Tu usuario no tiene area asignada para gestion.');
 
         $nombreDepartamento = (string) Departamento::query()->whereKey($deptoId)->value('nombre');
 

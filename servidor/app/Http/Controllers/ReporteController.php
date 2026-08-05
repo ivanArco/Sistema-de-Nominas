@@ -24,18 +24,35 @@ class ReporteController extends Controller
 
     public function nominas(Request $request): View
     {
-        $nominas = $this->consultarNominas($request)->paginate(30)->withQueryString();
+        $consulta = $this->consultarNominas($request);
+
+        $resumen = [
+            'registros' => (clone $consulta)->count(),
+            'total_percepciones' => (float) (clone $consulta)->sum('total_percepciones'),
+            'total_deducciones' => (float) (clone $consulta)->sum('total_deducciones'),
+            'total_neto' => (float) (clone $consulta)->sum('neto_pagado'),
+        ];
+
+        $nominas = $consulta->paginate(30)->withQueryString();
 
         return view('reportes.nominas', [
             'nominas' => $nominas,
             'filtros' => $this->filtrosNominas($request),
             'modoImpresion' => $request->boolean('imprimir'),
+            'resumen' => $resumen,
         ]);
     }
 
     public function nominasPdf(Request $request)
     {
         $nominas = $this->consultarNominas($request)->get();
+
+        if ($nominas->isEmpty()) {
+            return redirect()
+                ->route('reportes.nominas', $request->except(['nomina_ids']))
+                ->with('error', 'No se encontraron nominas para exportar con los filtros o seleccion aplicados.');
+        }
+
         $cliente = Cliente::query()->orderByDesc('id')->first();
         $empresaNombre = trim((string) ($cliente->razon_social ?? $cliente->nombre_comercial ?? ''));
         if ($empresaNombre === '') {
@@ -195,7 +212,14 @@ class ReporteController extends Controller
         /** @var User|null $usuario */
         $usuario = Auth::user();
 
-        if (!$usuario || $usuario->rolNormalizado() !== 'SUPERVISOR') {
+        if (!$usuario) {
+            return null;
+        }
+
+        $rol = $usuario->rolNormalizado();
+        $restringidoPorArea = $rol === 'SUPERVISOR' || ($rol === 'JEFE_AREA' && !$usuario->esAdministrador());
+
+        if (!$restringidoPorArea) {
             return null;
         }
 

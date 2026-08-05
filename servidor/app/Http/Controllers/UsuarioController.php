@@ -50,8 +50,15 @@ class UsuarioController extends Controller
      */
     public function create(): View
     {
+        $areaGestion = $this->resolverAreaGestion(request());
+
         return view('usuarios.create', [
-            'departamentos' => Departamento::where('activo', true)->orderBy('nombre')->get(),
+            'departamentos' => Departamento::where('activo', true)
+                ->when($this->usuarioRestringidoPorArea(request()) && $areaGestion !== null, function ($consulta) use ($areaGestion) {
+                    $consulta->whereRaw('LOWER(nombre) = ?', [Str::lower($areaGestion)]);
+                })
+                ->orderBy('nombre')
+                ->get(),
             'puestos' => Puesto::where('activo', true)->orderBy('nombre')->get(),
             'rolesConEmpleado' => self::ROLES_CON_EMPLEADO,
             'empleadoVinculado' => null,
@@ -63,8 +70,7 @@ class UsuarioController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
-        $generarContrasenaAutomatica = $request->boolean('generar_contrasena_automatica');
-        $datosValidados = $this->validarDatosUsuario($request, null, $generarContrasenaAutomatica);
+        $datosValidados = $this->validarDatosUsuario($request, null, true);
         $rolNormalizado = User::normalizarRol($datosValidados['rol']);
         $requiereEmpleado = in_array($rolNormalizado, self::ROLES_CON_EMPLEADO, true);
 
@@ -72,12 +78,18 @@ class UsuarioController extends Controller
             ? $this->validarDatosEmpleadoVinculado($request)
             : null;
 
-        $contrasenaTemporal = null;
-
-        if ($generarContrasenaAutomatica) {
-            $contrasenaTemporal = Str::password(12, true, true, true, false);
-            $datosValidados['contrasena'] = $contrasenaTemporal;
+        if (is_array($datosEmpleadoVinculado)) {
+            $this->autorizarDepartamentoGestion((int) $datosEmpleadoVinculado['depto_id'], $request);
         }
+
+        if ($this->usuarioRestringidoPorArea($request)) {
+            $areaGestion = $this->resolverAreaGestion($request);
+            abort_if($areaGestion === null, 403, 'Tu usuario no tiene area asignada para gestion.');
+            $datosValidados['area_contratacion'] = $areaGestion;
+        }
+
+        // Regla solicitada: la contrasena inicial del nuevo usuario es su CURP.
+        $datosValidados['contrasena'] = (string) $datosValidados['curp'];
 
         DB::transaction(function () use ($datosValidados, $datosEmpleadoVinculado, $requiereEmpleado, $rolNormalizado): void {
             User::create([
@@ -152,9 +164,7 @@ class UsuarioController extends Controller
             $mensaje .= ' Empleado vinculado creado automaticamente segun el rol asignado.';
         }
 
-        if (!empty($contrasenaTemporal)) {
-            $mensaje .= ' Contrasena temporal generada: '.$contrasenaTemporal;
-        }
+        $mensaje .= ' Contrasena inicial asignada: CURP del usuario.';
 
         return redirect()->route('usuarios.index')->with('exito', $mensaje);
     }
@@ -166,6 +176,7 @@ class UsuarioController extends Controller
     public function show(string $id): View
     {
         $usuario = User::findOrFail($id);
+        $this->autorizarUsuarioPorArea($usuario, request());
         $empleadoVinculado = Empleado::where('curp', $usuario->curp)->first();
 
         return view('usuarios.show', [
@@ -181,11 +192,18 @@ class UsuarioController extends Controller
     public function edit(string $id): View
     {
         $usuario = User::findOrFail($id);
+        $this->autorizarUsuarioPorArea($usuario, request());
         $empleadoVinculado = Empleado::where('curp', $usuario->curp)->first();
+        $areaGestion = $this->resolverAreaGestion(request());
 
         return view('usuarios.edit', [
             'usuario' => $usuario,
-            'departamentos' => Departamento::where('activo', true)->orderBy('nombre')->get(),
+            'departamentos' => Departamento::where('activo', true)
+                ->when($this->usuarioRestringidoPorArea(request()) && $areaGestion !== null, function ($consulta) use ($areaGestion) {
+                    $consulta->whereRaw('LOWER(nombre) = ?', [Str::lower($areaGestion)]);
+                })
+                ->orderBy('nombre')
+                ->get(),
             'puestos' => Puesto::where('activo', true)->orderBy('nombre')->get(),
             'rolesConEmpleado' => self::ROLES_CON_EMPLEADO,
             'empleadoVinculado' => $empleadoVinculado,
@@ -200,6 +218,7 @@ class UsuarioController extends Controller
     public function update(Request $request, string $id): RedirectResponse
     {
         $usuario = User::findOrFail($id);
+        $this->autorizarUsuarioPorArea($usuario, $request);
         $curpAnterior = $usuario->curp;
 
         $datosValidados = $this->validarDatosUsuario($request, $usuario->id);
@@ -211,6 +230,16 @@ class UsuarioController extends Controller
         $datosEmpleadoVinculado = $requiereEmpleado
             ? $this->validarDatosEmpleadoVinculado($request, $empleadoExistente?->id)
             : null;
+
+        if (is_array($datosEmpleadoVinculado)) {
+            $this->autorizarDepartamentoGestion((int) $datosEmpleadoVinculado['depto_id'], $request);
+        }
+
+        if ($this->usuarioRestringidoPorArea($request)) {
+            $areaGestion = $this->resolverAreaGestion($request);
+            abort_if($areaGestion === null, 403, 'Tu usuario no tiene area asignada para gestion.');
+            $datosValidados['area_contratacion'] = $areaGestion;
+        }
 
         DB::transaction(function () use (
             $usuario,
@@ -355,6 +384,7 @@ class UsuarioController extends Controller
     public function destroy(string $id): RedirectResponse
     {
         $usuario = User::findOrFail($id);
+        $this->autorizarUsuarioPorArea($usuario, request());
         $usuario->delete();
 
         return redirect()->route('usuarios.index')->with('exito', 'Usuario eliminado correctamente.');
@@ -407,7 +437,88 @@ class UsuarioController extends Controller
             ->when($activo !== '', fn ($consulta) => $consulta->where('activo', $activo === '1'))
             ->when($estado !== '', fn ($consulta) => $consulta->where('estado', 'like', "%{$estado}%"))
             ->when($fechaDesde !== '', fn ($consulta) => $consulta->whereDate('fecha_contratacion', '>=', $fechaDesde))
-            ->when($fechaHasta !== '', fn ($consulta) => $consulta->whereDate('fecha_contratacion', '<=', $fechaHasta));
+            ->when($fechaHasta !== '', fn ($consulta) => $consulta->whereDate('fecha_contratacion', '<=', $fechaHasta))
+            ->when($this->resolverAreaGestion($request) !== null, function ($consulta) use ($request) {
+                $areaGestion = $this->resolverAreaGestion($request);
+
+                $consulta->where(function ($subconsulta) use ($areaGestion) {
+                    $subconsulta->whereRaw('LOWER(area_contratacion) = ?', [Str::lower((string) $areaGestion)])
+                        ->orWhereExists(function ($enlaceEmpleado) use ($areaGestion) {
+                            $enlaceEmpleado->selectRaw('1')
+                                ->from('empleados')
+                                ->join('departamentos', 'departamentos.id', '=', 'empleados.depto_id')
+                                ->where(function ($llaves) {
+                                    $llaves->whereColumn('empleados.curp', 'users.curp')
+                                        ->orWhereColumn('empleados.nss', 'users.numero_seguro_social');
+                                })
+                                ->whereRaw('LOWER(departamentos.nombre) = ?', [Str::lower((string) $areaGestion)]);
+                        });
+                });
+            });
+    }
+
+    private function usuarioRestringidoPorArea(Request $request): bool
+    {
+        $usuario = $request->user();
+
+        if (!$usuario instanceof User) {
+            return false;
+        }
+
+        if ($usuario->rolNormalizado() === 'SUPERVISOR') {
+            return true;
+        }
+
+        return $usuario->rolNormalizado() === 'JEFE_AREA' && !$usuario->esAdministrador();
+    }
+
+    private function resolverAreaGestion(Request $request): ?string
+    {
+        if (!$this->usuarioRestringidoPorArea($request)) {
+            return null;
+        }
+
+        $area = trim((string) ($request->user()?->area_contratacion ?? ''));
+
+        return $area !== '' ? $area : null;
+    }
+
+    private function autorizarDepartamentoGestion(int $deptoId, Request $request): void
+    {
+        if (!$this->usuarioRestringidoPorArea($request)) {
+            return;
+        }
+
+        $area = $this->resolverAreaGestion($request);
+        abort_if($area === null, 403, 'Tu usuario no tiene area asignada para gestion.');
+
+        $nombreDepartamento = (string) Departamento::query()->whereKey($deptoId)->value('nombre');
+        abort_if($nombreDepartamento === '', 422, 'El departamento seleccionado no existe.');
+        abort_if(Str::lower(trim($nombreDepartamento)) !== Str::lower($area), 403, 'Solo puedes gestionar usuarios y empleados de tu area.');
+    }
+
+    private function autorizarUsuarioPorArea(User $usuario, Request $request): void
+    {
+        if (!$this->usuarioRestringidoPorArea($request)) {
+            return;
+        }
+
+        $area = $this->resolverAreaGestion($request);
+        abort_if($area === null, 403, 'Tu usuario no tiene area asignada para gestion.');
+
+        $mismoAreaUsuario = Str::lower(trim((string) ($usuario->area_contratacion ?? ''))) === Str::lower($area);
+
+        $mismoAreaEmpleado = Empleado::query()
+            ->where(function ($enlace) use ($usuario) {
+                $enlace->where('curp', (string) $usuario->curp)
+                    ->orWhere('nss', (string) $usuario->numero_seguro_social);
+            })
+            ->whereHas('departamento', function ($consulta) use ($area) {
+                $consulta->whereRaw('LOWER(nombre) = ?', [Str::lower($area)]);
+            })
+            ->exists();
+
+        abort_if(!$mismoAreaUsuario && !$mismoAreaEmpleado, 403, 'Solo puedes gestionar usuarios y empleados de tu area.');
     }
 
     /**
@@ -486,7 +597,7 @@ class UsuarioController extends Controller
             'jornada_empleado' => ['required', 'string', 'max:50'],
             'tipo_pago_empleado' => ['required', Rule::in(['SEMANAL', 'QUINCENAL', 'MENSUAL'])],
             'sal_dia_empleado' => ['required', 'numeric', 'min:0'],
-            'sal_int_empleado' => ['required', 'numeric', 'min:0'],
+            'sal_int_empleado' => ['nullable', 'numeric', 'min:0'],
             'porcentaje_infonavit_empleado' => ['nullable', 'numeric', 'min:0', 'max:30'],
             'porcentaje_afore_empleado' => ['nullable', 'numeric', 'min:0', 'max:30'],
             'usa_fondo_ahorro_empleado' => ['nullable', 'boolean'],
@@ -504,7 +615,7 @@ class UsuarioController extends Controller
             'jornada' => $datos['jornada_empleado'],
             'tipo_pago' => $datos['tipo_pago_empleado'],
             'sal_dia' => (float) $datos['sal_dia_empleado'],
-            'sal_int' => (float) $datos['sal_int_empleado'],
+            'sal_int' => isset($datos['sal_int_empleado']) ? (float) $datos['sal_int_empleado'] : null,
             'porcentaje_infonavit' => (float) ($datos['porcentaje_infonavit_empleado'] ?? 0),
             'porcentaje_afore' => (float) ($datos['porcentaje_afore_empleado'] ?? 1.125),
             'usa_fondo_ahorro' => isset($datos['usa_fondo_ahorro_empleado']) ? (bool) $datos['usa_fondo_ahorro_empleado'] : false,

@@ -440,14 +440,16 @@
                             <span class="izq"><span class="menu-icono"></span><span class="menu-texto">Usuarios y accesos</span></span>
                             <span class="menu-flecha">&gt;</span>
                         </a>
-                           <a class="sidebar-link {{ request()->routeIs('roles.*') ? 'activo' : '' }}" href="{{ route('roles.index') }}">
-                               <span class="izq"><span class="menu-icono"></span><span class="menu-texto">Roles</span></span>
-                               <span class="menu-flecha">&gt;</span>
-                           </a>
-                           <a class="sidebar-link {{ request()->routeIs('permisos.*') ? 'activo' : '' }}" href="{{ route('permisos.index') }}">
-                               <span class="izq"><span class="menu-icono"></span><span class="menu-texto">Permisos</span></span>
-                               <span class="menu-flecha">&gt;</span>
-                           </a>
+                        @if(auth()->user()?->esAdministrador())
+                            <a class="sidebar-link {{ request()->routeIs('roles.*') ? 'activo' : '' }}" href="{{ route('roles.index') }}">
+                                <span class="izq"><span class="menu-icono"></span><span class="menu-texto">Roles</span></span>
+                                <span class="menu-flecha">&gt;</span>
+                            </a>
+                            <a class="sidebar-link {{ request()->routeIs('permisos.*') ? 'activo' : '' }}" href="{{ route('permisos.index') }}">
+                                <span class="izq"><span class="menu-icono"></span><span class="menu-texto">Permisos</span></span>
+                                <span class="menu-flecha">&gt;</span>
+                            </a>
+                        @endif
                     @endif
                     @if(auth()->user()?->tienePermiso('clientes.gestionar'))
                         <a class="sidebar-link {{ request()->routeIs('clientes.*') ? 'activo' : '' }}" href="{{ route('clientes.index') }}">
@@ -494,12 +496,6 @@
                     @if(auth()->user()?->tienePermiso('ventas.metas.ver'))
                         <a class="sidebar-link {{ request()->routeIs('ventas.metas.*') ? 'activo' : '' }}" href="{{ route('ventas.metas.index') }}">
                             <span class="izq"><span class="menu-icono"></span><span class="menu-texto">Metas de ventas</span></span>
-                            <span class="menu-flecha">&gt;</span>
-                        </a>
-                    @endif
-                    @if(auth()->user()?->tienePermiso('contratos.gestionar'))
-                        <a class="sidebar-link {{ request()->routeIs('contratos.*') ? 'activo' : '' }}" href="{{ route('contratos.index') }}">
-                            <span class="izq"><span class="menu-icono"></span><span class="menu-texto">Contratos</span></span>
                             <span class="menu-flecha">&gt;</span>
                         </a>
                     @endif

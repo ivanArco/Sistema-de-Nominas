@@ -28,6 +28,7 @@
             padding: 4px;
             box-sizing: border-box;
             position: relative;
+            min-height: 126mm;
         }
 
         .linea-corte {
@@ -56,16 +57,6 @@
             text-align: center;
             margin-bottom: 4px;
             font-size: 7px;
-        }
-
-        .tipo-copia {
-            position: absolute;
-            right: 6px;
-            top: 6px;
-            font-size: 7px;
-            font-weight: 700;
-            border: 1px solid #333;
-            padding: 1px 6px;
         }
 
         .tabla {
@@ -110,35 +101,44 @@
     </style>
 </head>
 <body>
-    @forelse($nominas as $nomina)
-        @php
-            $empleado = $nomina->empleado;
-            $periodo = $nomina->periodo;
-            $nombreEmpleado = trim(($empleado->nombre ?? '') . ' ' . ($empleado->ap_paterno ?? '') . ' ' . ($empleado->ap_materno ?? ''));
-            $periodoTexto = ($periodo->anio ?? '-') . ' / ' . ($periodo->numero_periodo ?? '-') . ' / ' . ($periodo->tipo_periodo ?? '-');
-            $fechaInicio = optional($periodo->fecha_inicio)->format('d/m/Y') ?? '-';
-            $fechaFin = optional($periodo->fecha_fin)->format('d/m/Y') ?? '-';
-            $fechaPago = optional($periodo->fecha_pago)->format('d/m/Y') ?? '-';
+    @php
+        $recibos = collect($nominas)->flatMap(function ($nomina) {
+            return [
+                ['nomina' => $nomina, 'copia' => 'COPIA EMPLEADO'],
+                ['nomina' => $nomina, 'copia' => 'COPIA PATRON'],
+            ];
+        });
+    @endphp
 
-            $percepciones = $nomina->detalles
-                ->filter(fn ($detalle) => (($detalle->concepto->tipo ?? '') === 'PERCEPCION') && ((float) $detalle->importe > 0))
-                ->values();
-
-            $deducciones = $nomina->detalles
-                ->filter(fn ($detalle) => (($detalle->concepto->tipo ?? '') === 'DEDUCCION') && ((float) $detalle->importe > 0))
-                ->values();
-
-            // Compacto para formato vertical y 2 copias por hoja sin romper firma.
-            $filasDetalle = max(4, $percepciones->count(), $deducciones->count());
-        @endphp
-
+    @forelse($recibos->chunk(2) as $grupo)
         <div class="hoja">
-            @for($numeroCopia = 1; $numeroCopia <= 2; $numeroCopia++)
-                <section class="recibo">
-                    <div class="tipo-copia">{{ $numeroCopia === 1 ? 'COPIA EMPLEADO' : 'COPIA PATRON' }}</div>
+            @foreach($grupo as $indice => $item)
+                @php
+                    $nomina = $item['nomina'];
+                    $tipoCopia = $item['copia'];
+                    $empleado = $nomina->empleado;
+                    $periodo = $nomina->periodo;
+                    $nombreEmpleado = trim(($empleado->nombre ?? '') . ' ' . ($empleado->ap_paterno ?? '') . ' ' . ($empleado->ap_materno ?? ''));
+                    $periodoTexto = ($periodo->anio ?? '-') . ' / ' . ($periodo->numero_periodo ?? '-') . ' / ' . ($periodo->tipo_periodo ?? '-');
+                    $fechaInicio = optional($periodo->fecha_inicio)->format('d/m/Y') ?? '-';
+                    $fechaFin = optional($periodo->fecha_fin)->format('d/m/Y') ?? '-';
+                    $fechaPago = optional($periodo->fecha_pago)->format('d/m/Y') ?? '-';
 
+                    $percepciones = $nomina->detalles
+                        ->filter(fn ($detalle) => (($detalle->concepto->tipo ?? '') === 'PERCEPCION') && ((float) $detalle->importe > 0))
+                        ->values();
+
+                    $deducciones = $nomina->detalles
+                        ->filter(fn ($detalle) => (($detalle->concepto->tipo ?? '') === 'DEDUCCION') && ((float) $detalle->importe > 0))
+                        ->values();
+
+                    // Limitar filas mantiene una altura estable para asegurar 2 recibos por hoja.
+                    $filasDetalle = min(6, max(4, $percepciones->count(), $deducciones->count()));
+                @endphp
+
+                <section class="recibo">
                     <div class="titulo-principal">{{ $empresaNombre }}</div>
-                    <div class="subtitulo">Recibo de nomina | Generado: {{ $fechaGeneracion }}</div>
+                    <div class="subtitulo">Recibo de nomina | {{ $tipoCopia }} | Generado: {{ $fechaGeneracion }}</div>
 
                     <table class="tabla">
                         <tr>
@@ -221,10 +221,10 @@
                     <div class="firma">Firma del empleado</div>
                 </section>
 
-                @if($numeroCopia === 1)
+                @if($indice === 0 && $grupo->count() > 1)
                     <div class="linea-corte"><span>corte</span></div>
                 @endif
-            @endfor
+            @endforeach
         </div>
     @empty
         <p>No hay nominas para los filtros seleccionados.</p>

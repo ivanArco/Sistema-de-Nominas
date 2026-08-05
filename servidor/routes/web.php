@@ -20,7 +20,6 @@ use App\Http\Controllers\VentaController;
 use App\Http\Controllers\AutenticacionController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\ContratoController;
 use App\Http\Controllers\EvaluacionDesempenoController;
 use App\Http\Controllers\VentaMetaController;
 
@@ -74,7 +73,10 @@ Route::middleware('auth')->group(function () {
         Route::get('usuarios/{usuario}/editar', [UsuarioController::class, 'edit'])->name('usuarios.edit');
         Route::put('usuarios/{usuario}', [UsuarioController::class, 'update'])->name('usuarios.update');
         Route::patch('usuarios/{usuario}', [UsuarioController::class, 'update']);
+    });
 
+    // Roles y permisos: solo para administrador.
+    Route::middleware(['permiso:usuarios.gestionar', 'admin'])->group(function () {
         Route::resource('roles', RolController::class);
         Route::resource('permisos', PermisoController::class)->except(['show']);
     });
@@ -128,6 +130,7 @@ Route::middleware('auth')->group(function () {
         Route::get('reportes', [ReporteController::class, 'index'])->name('reportes.index');
         Route::get('reportes/nominas', [ReporteController::class, 'nominas'])->name('reportes.nominas');
         Route::get('reportes/nominas/pdf', [ReporteController::class, 'nominasPdf'])->name('reportes.nominas.pdf');
+        Route::post('reportes/nominas/pdf-seleccionadas', [ReporteController::class, 'nominasPdf'])->name('reportes.nominas.pdf.seleccionadas');
         Route::get('reportes/nominas/csv', [ReporteController::class, 'nominasCsv'])->name('reportes.nominas.csv');
         Route::get('reportes/empleados', [ReporteController::class, 'empleados'])->name('reportes.empleados');
         Route::get('reportes/incidencias', [ReporteController::class, 'incidencias'])->name('reportes.incidencias');
@@ -191,10 +194,6 @@ Route::middleware('auth')->group(function () {
             ->except(['index', 'show'])
             ->parameters(['ventas-metas' => 'meta'])
             ->names('ventas.metas');
-    });
-
-    Route::middleware('permiso:contratos.gestionar')->group(function () {
-        Route::resource('contratos', ContratoController::class)->except(['show']);
     });
 
     Route::middleware('permiso:evaluaciones.gestionar')->group(function () {

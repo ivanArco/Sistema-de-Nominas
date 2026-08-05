@@ -71,7 +71,8 @@
     </div>
     <div>
         <label>Salario integrado</label>
-        <input type="number" step="0.01" name="sal_int" value="{{ old('sal_int', $empleado->sal_int ?? '') }}" required {{ $esSecretariaEditando ? 'readonly' : '' }}>
+        <input type="number" step="0.01" name="sal_int" value="{{ old('sal_int', $empleado->sal_int ?? '') }}" readonly>
+        <small style="display:block; margin-top:4px; color:#6b7280;">Se calcula automaticamente con salario diario y antiguedad.</small>
     </div>
     <div>
         <label>Departamento</label>

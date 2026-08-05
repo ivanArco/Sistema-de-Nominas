@@ -18,10 +18,13 @@ class VentaController extends Controller
     {
         $estatus = $request->string('estatus')->toString();
         $empleadoTexto = $request->string('empleado')->trim()->toString();
+        $vendedorId = (int) $request->integer('vendedor_id');
+        $vendedores = $this->vendedoresDisponibles();
 
         $ventas = Venta::query()
             ->with(['empleado.departamento'])
             ->when($estatus !== '', fn ($q) => $q->where('estatus', $estatus))
+            ->when($vendedorId > 0, fn ($q) => $q->where('empleado_id', $vendedorId))
             ->when($empleadoTexto !== '', function ($q) use ($empleadoTexto) {
                 $q->whereHas('empleado', function ($sub) use ($empleadoTexto) {
                     $sub->where('num_empleado', 'like', "%{$empleadoTexto}%")
@@ -36,14 +39,15 @@ class VentaController extends Controller
 
         return view('ventas.index', [
             'ventas' => $ventas,
-            'filtros' => $request->only(['estatus', 'empleado']),
+            'filtros' => $request->only(['estatus', 'empleado', 'vendedor_id']),
+            'vendedores' => $vendedores,
         ]);
     }
 
     public function create(): View
     {
         return view('ventas.create', [
-            'empleados' => $this->empleadosDisponibles(),
+            'empleados' => $this->vendedoresDisponibles(),
         ]);
     }
 
@@ -74,7 +78,7 @@ class VentaController extends Controller
 
         return view('ventas.edit', [
             'venta' => $venta,
-            'empleados' => $this->empleadosDisponibles(),
+            'empleados' => $this->vendedoresDisponibles(),
         ]);
     }
 
@@ -153,6 +157,11 @@ class VentaController extends Controller
         /** @var User|null $usuario */
         $usuario = Auth::user();
 
+        if ($usuario?->tienePermiso('ventas.gestionar')) {
+            $idsVendedores = $this->vendedoresDisponibles()->pluck('id')->all();
+            $reglasEmpleado[] = Rule::in($idsVendedores);
+        }
+
         if ($usuario?->tienePermiso('ventas.propias') && !$usuario?->tienePermiso('ventas.gestionar')) {
             $empleado = $this->resolverEmpleadoDelUsuario();
             abort_if(!$empleado, 404, 'No hay empleado vinculado para este usuario.');
@@ -210,7 +219,7 @@ class VentaController extends Controller
         }
 
         if ($usuario->tienePermiso('ventas.gestionar')) {
-            if ($usuario->rolNormalizado() === 'SUPERVISOR') {
+            if ($this->usuarioRestringidoPorArea($usuario)) {
                 $deptoId = Empleado::query()
                     ->where('curp', (string) $usuario->curp)
                     ->orWhere('nss', (string) $usuario->numero_seguro_social)
@@ -256,7 +265,7 @@ class VentaController extends Controller
         }
 
         if ($usuario->tienePermiso('ventas.gestionar')) {
-            if ($usuario->rolNormalizado() !== 'SUPERVISOR') {
+            if (!$this->usuarioRestringidoPorArea($usuario)) {
                 return;
             }
 
@@ -285,7 +294,7 @@ class VentaController extends Controller
         $usuario = Auth::user();
 
         if ($usuario?->tienePermiso('ventas.gestionar')) {
-            if ($usuario->rolNormalizado() === 'SUPERVISOR') {
+            if ($usuario && $this->usuarioRestringidoPorArea($usuario)) {
                 $deptoId = Empleado::query()
                     ->where('curp', (string) $usuario->curp)
                     ->orWhere('nss', (string) $usuario->numero_seguro_social)
@@ -309,5 +318,65 @@ class VentaController extends Controller
         }
 
         return $consulta->get();
+    }
+
+    private function vendedoresDisponibles()
+    {
+        $consulta = Empleado::query()
+            ->where('estatus', 'ACTIVO')
+            ->whereExists(function ($subconsulta) {
+                $subconsulta->selectRaw('1')
+                    ->from('users')
+                    ->where(function ($enlace) {
+                        $enlace->whereColumn('users.curp', 'empleados.curp')
+                            ->orWhereColumn('users.numero_seguro_social', 'empleados.nss');
+                    })
+                    ->where('users.rol', 'VENDEDOR');
+            })
+            ->orderBy('nombre')
+            ->orderBy('ap_paterno');
+
+        /** @var User|null $usuario */
+        $usuario = Auth::user();
+
+        if ($usuario?->tienePermiso('ventas.gestionar')) {
+            if ($usuario && $this->usuarioRestringidoPorArea($usuario)) {
+                $deptoId = Empleado::query()
+                    ->where('curp', (string) $usuario->curp)
+                    ->orWhere('nss', (string) $usuario->numero_seguro_social)
+                    ->value('depto_id');
+
+                if ($deptoId) {
+                    $consulta->where('depto_id', $deptoId);
+                } else {
+                    $consulta->whereRaw('1 = 0');
+                }
+            }
+
+            return $consulta->get();
+        }
+
+        if ($usuario?->tienePermiso('ventas.propias')) {
+            $empleado = $this->resolverEmpleadoDelUsuario();
+
+            if ($empleado) {
+                $consulta->whereKey($empleado->id);
+            } else {
+                $consulta->whereRaw('1 = 0');
+            }
+        }
+
+        return $consulta->get();
+    }
+
+    private function usuarioRestringidoPorArea(User $usuario): bool
+    {
+        $rol = $usuario->rolNormalizado();
+
+        if ($rol === 'SUPERVISOR') {
+            return true;
+        }
+
+        return $rol === 'JEFE_AREA' && !$usuario->esAdministrador();
     }
 }

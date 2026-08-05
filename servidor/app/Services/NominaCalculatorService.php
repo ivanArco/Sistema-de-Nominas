@@ -9,20 +9,35 @@ use Illuminate\Support\Collection;
 
 class NominaCalculatorService
 {
-    private const TASA_IMSS_OBRERO = 0.02375;
+    // Valores de respaldo usados cuando no existe configuracion explicita.
+    private const UMA_DIARIA_DEFAULT = 113.14;
 
-    private const ISR_TRAMOS = [
-        ['limite' => 8952.49, 'cuota' => 0.00, 'tasa' => 0.0192],
-        ['limite' => 75984.55, 'cuota' => 171.88, 'tasa' => 0.0640],
-        ['limite' => 133536.07, 'cuota' => 4461.94, 'tasa' => 0.1088],
-        ['limite' => 155229.80, 'cuota' => 10723.55, 'tasa' => 0.16],
-        ['limite' => 185852.57, 'cuota' => 14194.54, 'tasa' => 0.1792],
-        ['limite' => 374837.88, 'cuota' => 19682.13, 'tasa' => 0.2136],
-        ['limite' => 590795.99, 'cuota' => 60049.40, 'tasa' => 0.2352],
-        ['limite' => 1127926.84, 'cuota' => 110842.74, 'tasa' => 0.30],
-        ['limite' => 1503902.46, 'cuota' => 272613.97, 'tasa' => 0.32],
-        ['limite' => 4511707.37, 'cuota' => 392841.96, 'tasa' => 0.34],
-        ['limite' => PHP_FLOAT_MAX, 'cuota' => 1414947.85, 'tasa' => 0.35],
+    // Tope legal de SBC para IMSS: 25 UMA diarias.
+    private const TOPE_SBC_UMA_DEFAULT = 25;
+
+    // Tasas obreras aproximadas por componente para calcular IMSS retenido al trabajador.
+    // Se mantienen separadas para facilitar ajuste cuando cambie la normativa.
+    private const IMSS_COMPONENTES_OBRERO_DEFAULT = [
+        'prestaciones_dinero' => 0.0025,
+        'gastos_medicos_pensionados' => 0.00375,
+        'invalidez_vida' => 0.00625,
+        'cesantia_vejez' => 0.01125,
+        'excedente_3_uma' => 0.0040,
+    ];
+
+    // Tarifa ISR anual de referencia para el calculo periodico por anualizacion.
+    private const ISR_TRAMOS_ANUALES_DEFAULT = [
+        ['inferior' => 0.01, 'superior' => 8952.49, 'cuota' => 0.00, 'tasa' => 0.0192],
+        ['inferior' => 8952.50, 'superior' => 75984.55, 'cuota' => 171.88, 'tasa' => 0.0640],
+        ['inferior' => 75984.56, 'superior' => 133536.07, 'cuota' => 4461.94, 'tasa' => 0.1088],
+        ['inferior' => 133536.08, 'superior' => 155229.80, 'cuota' => 10723.55, 'tasa' => 0.1600],
+        ['inferior' => 155229.81, 'superior' => 185852.57, 'cuota' => 14194.54, 'tasa' => 0.1792],
+        ['inferior' => 185852.58, 'superior' => 374837.88, 'cuota' => 19682.13, 'tasa' => 0.2136],
+        ['inferior' => 374837.89, 'superior' => 590795.99, 'cuota' => 60049.40, 'tasa' => 0.2352],
+        ['inferior' => 590796.00, 'superior' => 1127926.84, 'cuota' => 110842.74, 'tasa' => 0.3000],
+        ['inferior' => 1127926.85, 'superior' => 1503902.46, 'cuota' => 272613.97, 'tasa' => 0.3200],
+        ['inferior' => 1503902.47, 'superior' => 4511707.37, 'cuota' => 392841.96, 'tasa' => 0.3400],
+        ['inferior' => 4511707.38, 'superior' => PHP_FLOAT_MAX, 'cuota' => 1414947.85, 'tasa' => 0.3500],
     ];
 
     private const TIPOS_PERCEPCION = ['HORA_EXTRA', 'BONO', 'VACACIONES_PAGADAS', 'OTRO'];
@@ -62,25 +77,26 @@ class NominaCalculatorService
 
         $salarioDiario = (float) ($empleado->sal_dia ?? 0);
         $salarioIntegradoDiario = (float) ($empleado->sal_int ?? $salarioDiario);
+        $sbcDiarioTopado = $this->aplicarTopeSbcDiario($salarioIntegradoDiario);
 
         $sueldoBase = round($diasPagados * $salarioDiario, 2);
-        $baseCotizacion = round($diasPagados * $salarioIntegradoDiario, 2);
+        $baseCotizacion = round($diasPagados * $sbcDiarioTopado, 2);
 
         // Base gravable para ISR: percepciones gravables menos descuentos por incidencias.
         $baseGravable = max(0, $sueldoBase + $percepcionesIncidencias - $deduccionesIncidencias);
 
         $isr = $this->calcularIsrPeriodico($baseGravable, (string) $periodo->tipo_periodo);
-        $imss = round($baseCotizacion * self::TASA_IMSS_OBRERO, 2);
+        $imss = $this->calcularImssObrero($sbcDiarioTopado, $diasPagados);
 
-        $porcentajeInfonavit = ((float) ($empleado->porcentaje_infonavit ?? 0)) / 100;
+        $porcentajeInfonavit = $this->normalizarPorcentaje((float) ($empleado->porcentaje_infonavit ?? 0));
         $infonavit = round($baseCotizacion * $porcentajeInfonavit, 2);
 
-        $porcentajeAfore = ((float) ($empleado->porcentaje_afore ?? 1.125)) / 100;
+        $porcentajeAfore = $this->normalizarPorcentaje((float) ($empleado->porcentaje_afore ?? 1.125));
         $afore = round($baseCotizacion * $porcentajeAfore, 2);
 
         $fondoAhorro = 0.0;
         if ($empleado->usa_fondo_ahorro) {
-            $porcentajeFondo = ((float) ($empleado->porcentaje_fondo_ahorro ?? 0)) / 100;
+            $porcentajeFondo = $this->normalizarPorcentaje((float) ($empleado->porcentaje_fondo_ahorro ?? 0));
             $fondoAhorro = round($sueldoBase * $porcentajeFondo, 2);
         }
 
@@ -108,6 +124,10 @@ class NominaCalculatorService
 
     private function calcularIsrPeriodico(float $baseGravable, string $tipoPeriodo): float
     {
+        if ($baseGravable <= 0) {
+            return 0.0;
+        }
+
         $factorAnualizacion = match ($tipoPeriodo) {
             'SEMANAL' => 52,
             'CATORCENAL' => 26,
@@ -117,19 +137,87 @@ class NominaCalculatorService
 
         $ingresoAnual = $baseGravable * $factorAnualizacion;
 
-        $limiteInferior = 0.0;
-        foreach (self::ISR_TRAMOS as $tramo) {
-            if ($ingresoAnual <= $tramo['limite']) {
-                $excedente = max(0, $ingresoAnual - $limiteInferior);
+        foreach ($this->obtenerTramosIsrAnuales() as $tramo) {
+            if ($ingresoAnual >= (float) $tramo['inferior'] && $ingresoAnual <= (float) $tramo['superior']) {
+                $excedente = max(0, $ingresoAnual - (float) $tramo['inferior']);
                 $isrAnual = (float) $tramo['cuota'] + ($excedente * (float) $tramo['tasa']);
 
                 return round($isrAnual / $factorAnualizacion, 2);
             }
-
-            $limiteInferior = (float) $tramo['limite'];
         }
 
         return 0.0;
+    }
+
+    private function aplicarTopeSbcDiario(float $sbcDiario): float
+    {
+        $tope = $this->obtenerUmaDiaria() * $this->obtenerTopeSbcUma();
+
+        return round(max(0.0, min($sbcDiario, $tope)), 2);
+    }
+
+    private function calcularImssObrero(float $sbcDiarioTopado, float $diasPagados): float
+    {
+        if ($sbcDiarioTopado <= 0 || $diasPagados <= 0) {
+            return 0.0;
+        }
+
+        $baseCotizacion = $sbcDiarioTopado * $diasPagados;
+        $uma = $this->obtenerUmaDiaria();
+        $excedenteDiario = max(0.0, $sbcDiarioTopado - ($uma * 3));
+        $baseExcedente = $excedenteDiario * $diasPagados;
+        $componentes = $this->obtenerComponentesImssObrero();
+
+        $imss = 0.0;
+        $imss += $baseCotizacion * ((float) ($componentes['prestaciones_dinero'] ?? 0));
+        $imss += $baseCotizacion * ((float) ($componentes['gastos_medicos_pensionados'] ?? 0));
+        $imss += $baseCotizacion * ((float) ($componentes['invalidez_vida'] ?? 0));
+        $imss += $baseCotizacion * ((float) ($componentes['cesantia_vejez'] ?? 0));
+        $imss += $baseExcedente * ((float) ($componentes['excedente_3_uma'] ?? 0));
+
+        return round($imss, 2);
+    }
+
+    private function normalizarPorcentaje(float $porcentaje): float
+    {
+        $valor = max(0.0, min($porcentaje, $this->obtenerPorcentajeMaximoDeduccion()));
+
+        return $valor / 100;
+    }
+
+    /**
+     * @return array<int, array{inferior: float|int, superior: float|int, cuota: float|int, tasa: float|int}>
+     */
+    private function obtenerTramosIsrAnuales(): array
+    {
+        $tramos = config('nomina.isr_tramos_anuales', self::ISR_TRAMOS_ANUALES_DEFAULT);
+
+        return is_array($tramos) ? $tramos : self::ISR_TRAMOS_ANUALES_DEFAULT;
+    }
+
+    private function obtenerUmaDiaria(): float
+    {
+        return (float) config('nomina.uma_diaria', self::UMA_DIARIA_DEFAULT);
+    }
+
+    private function obtenerTopeSbcUma(): float
+    {
+        return (float) config('nomina.tope_sbc_uma', self::TOPE_SBC_UMA_DEFAULT);
+    }
+
+    /**
+     * @return array<string, float|int>
+     */
+    private function obtenerComponentesImssObrero(): array
+    {
+        $componentes = config('nomina.imss_componentes_obrero', self::IMSS_COMPONENTES_OBRERO_DEFAULT);
+
+        return is_array($componentes) ? $componentes : self::IMSS_COMPONENTES_OBRERO_DEFAULT;
+    }
+
+    private function obtenerPorcentajeMaximoDeduccion(): float
+    {
+        return (float) config('nomina.porcentaje_maximo_deduccion', 30.0);
     }
 
     /**

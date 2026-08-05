@@ -8,7 +8,9 @@ use App\Models\Incidencia;
 use App\Models\Nomina;
 use App\Models\NominaDetalle;
 use App\Models\PeriodoNomina;
+use App\Models\User;
 use App\Services\NominaCalculatorService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -32,6 +34,7 @@ class NominaController extends Controller
             ->with(['empleado', 'periodo'])
             ->when($periodoId !== '', fn ($consulta) => $consulta->where('periodo_nomina_id', $periodoId))
             ->when($estatus !== '', fn ($consulta) => $consulta->where('estatus', $estatus))
+            ->tap(fn (Builder $consulta) => $this->aplicarFiltroAreaContadorNominas($consulta, $request))
             ->latest()
             ->paginate(12)
             ->withQueryString();
@@ -50,6 +53,8 @@ class NominaController extends Controller
     {
         $busquedaEmpleado = $request->string('buscar_empleado')->trim()->toString();
         $tipoPagoFiltro = strtoupper(trim($request->string('tipo_pago')->toString()));
+        $hoy = now();
+
         if (!in_array($tipoPagoFiltro, ['SEMANAL', 'QUINCENAL', 'MENSUAL'], true)) {
             $tipoPagoFiltro = '';
         }
@@ -57,6 +62,7 @@ class NominaController extends Controller
         $empleados = Empleado::query()
             ->with(['departamento', 'puesto'])
             ->where('estatus', 'ACTIVO')
+            ->tap(fn (Builder $consulta) => $this->aplicarFiltroAreaContadorEmpleados($consulta, $request))
             ->when($tipoPagoFiltro !== '', fn ($consulta) => $consulta->where('tipo_pago', $tipoPagoFiltro))
             ->when($busquedaEmpleado !== '', function ($consulta) use ($busquedaEmpleado) {
                 $consulta->where(function ($subconsulta) use ($busquedaEmpleado) {
@@ -96,6 +102,8 @@ class NominaController extends Controller
             'empleados' => $empleados,
             'empleadosData' => $empleadosData,
             'periodos' => PeriodoNomina::where('estatus', 'ABIERTO')
+                ->whereYear('fecha_inicio', (int) $hoy->year)
+                ->whereMonth('fecha_inicio', (int) $hoy->month)
                 ->when($tipoPagoFiltro !== '', function ($consulta) use ($tipoPagoFiltro) {
                     if ($tipoPagoFiltro === 'QUINCENAL') {
                         $consulta->whereIn('tipo_periodo', ['QUINCENAL', 'CATORCENAL']);
@@ -126,6 +134,7 @@ class NominaController extends Controller
         ]);
 
         $empleado = Empleado::findOrFail($datos['empleado_id']);
+        $this->autorizarAccesoEmpleadoContador($empleado, $request);
         $periodo = PeriodoNomina::findOrFail($datos['periodo_nomina_id']);
 
         [$esCompatible, $mensajeCompatibilidad] = $this->validarCompatibilidadPeriodo($empleado, $periodo);
@@ -166,6 +175,7 @@ class NominaController extends Controller
         $empleados = Empleado::query()
             ->where('estatus', 'ACTIVO')
             ->with(['departamento', 'puesto'])
+            ->tap(fn (Builder $consulta) => $this->aplicarFiltroAreaContadorEmpleados($consulta, $request))
             ->get()
             ->filter(fn (Empleado $empleado) => $this->normalizarTipoPago((string) ($empleado->tipo_pago ?? '')) === $tipoPagoObjetivo)
             ->values();
@@ -244,6 +254,7 @@ class NominaController extends Controller
     public function edit(string $id): View
     {
         $nomina = Nomina::with(['empleado.puesto', 'periodo', 'detalles.concepto'])->findOrFail($id);
+        $this->autorizarAccesoNominaContador($nomina, request());
 
         $incidenciasFalta = Incidencia::query()
             ->where('empleado_id', $nomina->empleado_id)
@@ -273,6 +284,7 @@ class NominaController extends Controller
     public function update(Request $request, string $id): RedirectResponse
     {
         $nomina = Nomina::findOrFail($id);
+        $this->autorizarAccesoNominaContador($nomina, $request);
 
         $datos = $request->validate([
             'estatus' => ['required', Rule::in(['BORRADOR', 'CALCULADA', 'PAGADA', 'CANCELADA'])],
@@ -286,6 +298,7 @@ class NominaController extends Controller
     public function autorizarCierre(Request $request, string $id): RedirectResponse
     {
         $nomina = Nomina::findOrFail($id);
+        $this->autorizarAccesoNominaContador($nomina, $request);
 
         if ($nomina->estatus === 'CANCELADA') {
             return back()->with('error', 'No puedes autorizar cierre de una nomina cancelada.');
@@ -311,7 +324,9 @@ class NominaController extends Controller
      */
     public function destroy(string $id): RedirectResponse
     {
-        Nomina::findOrFail($id)->delete();
+        $nomina = Nomina::findOrFail($id);
+        $this->autorizarAccesoNominaContador($nomina, request());
+        $nomina->delete();
 
         return redirect()->route('nominas.index')->with('exito', 'Nomina eliminada correctamente.');
     }
@@ -432,5 +447,97 @@ class NominaController extends Controller
                 ]);
             }
         });
+    }
+
+    private function aplicarFiltroAreaContadorNominas(Builder $consulta, Request $request): void
+    {
+        if (!$this->esContador($request)) {
+            return;
+        }
+
+        $area = $this->resolverAreaContador($request);
+
+        if ($area === null) {
+            $consulta->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $consulta->whereHas('empleado.departamento', function (Builder $subconsulta) use ($area): void {
+            $subconsulta->whereRaw('LOWER(nombre) = ?', [Str::lower($area)]);
+        });
+    }
+
+    private function aplicarFiltroAreaContadorEmpleados(Builder $consulta, Request $request): void
+    {
+        if (!$this->esContador($request)) {
+            return;
+        }
+
+        $area = $this->resolverAreaContador($request);
+
+        if ($area === null) {
+            $consulta->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $consulta->whereHas('departamento', function (Builder $subconsulta) use ($area): void {
+            $subconsulta->whereRaw('LOWER(nombre) = ?', [Str::lower($area)]);
+        });
+    }
+
+    private function autorizarAccesoEmpleadoContador(Empleado $empleado, Request $request): void
+    {
+        if (!$this->esContador($request)) {
+            return;
+        }
+
+        $area = $this->resolverAreaContador($request);
+        abort_if($area === null, 403, 'Tu usuario contador no tiene area asignada.');
+
+        $nombreDepartamento = $empleado->relationLoaded('departamento')
+            ? (string) ($empleado->departamento->nombre ?? '')
+            : (string) $empleado->departamento()->value('nombre');
+
+        abort_if(Str::lower(trim($nombreDepartamento)) !== Str::lower($area), 403, 'Solo puedes calcular nominas de empleados de tu area.');
+    }
+
+    private function autorizarAccesoNominaContador(Nomina $nomina, Request $request): void
+    {
+        if (!$this->esContador($request)) {
+            return;
+        }
+
+        $empleado = Empleado::with('departamento')->findOrFail((int) $nomina->empleado_id);
+        $this->autorizarAccesoEmpleadoContador($empleado, $request);
+    }
+
+    private function esContador(Request $request): bool
+    {
+        $usuario = $request->user();
+
+        if (!$usuario instanceof User) {
+            return false;
+        }
+
+        $rol = $usuario->rolNormalizado();
+
+        if ($rol === 'CONTADOR') {
+            return true;
+        }
+
+        return $rol === 'JEFE_AREA' && !$usuario->esAdministrador();
+    }
+
+    private function resolverAreaContador(Request $request): ?string
+    {
+        if (!$this->esContador($request)) {
+            return null;
+        }
+
+        $area = trim((string) ($request->user()?->area_contratacion ?? ''));
+
+        return $area !== '' ? $area : null;
     }
 }

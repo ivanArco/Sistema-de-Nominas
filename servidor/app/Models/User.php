@@ -187,4 +187,12 @@ class User extends Authenticatable
             ->whereHas('roles', fn ($query) => $query->whereKey($this->rol_id))
             ->exists();
     }
+
+    public function esAdministrador(): bool
+    {
+        $rol = $this->rolNormalizado();
+        $area = mb_strtolower(trim((string) ($this->area_contratacion ?? '')));
+
+        return $rol === 'JEFE_AREA' && $area === 'direccion';
+    }
 }

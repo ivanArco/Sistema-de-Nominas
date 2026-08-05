@@ -1,7 +1,6 @@
 @php
     $esEdicion = isset($usuario);
     $rolActual = \App\Models\User::normalizarRol(old('rol', $usuario->rol ?? 'EMPLEADO'));
-    $generarContrasenaAutomatica = !$esEdicion && (string) old('generar_contrasena_automatica', '1') === '1';
     $rolesConEmpleado = $rolesConEmpleado ?? ['EMPLEADO', 'VENDEDOR', 'CONTADOR', 'SECRETARIA'];
     $claseBloqueEmpleado = in_array($rolActual, $rolesConEmpleado, true) ? '' : 'bloque-empleado-oculto';
 @endphp
@@ -10,21 +9,58 @@
     .bloque-empleado-oculto {
         display: none;
     }
+
+    .usuarios-form-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(2, minmax(220px, 1fr));
+    }
+
+    .usuarios-form-grid > div {
+        background: #fcfdff;
+        border: 1px solid #e3eaf2;
+        border-radius: 12px;
+        padding: 10px;
+    }
+
+    .usuarios-banner {
+        margin: 0 0 12px;
+        border: 1px solid #b8d8bf;
+        border-radius: 12px;
+        background: #effbf1;
+        color: #214a2b;
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+
+    @media (max-width: 760px) {
+        .usuarios-form-grid {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 
-<div class="grilla">
+@if(!$esEdicion)
+    <p class="usuarios-banner">
+        Contrasena inicial automatica: se asignara la CURP capturada para este usuario.
+    </p>
+@endif
+
+<div class="usuarios-form-grid">
     <div>
         <label>Nombre de usuario</label>
         <input name="nombre_usuario" value="{{ old('nombre_usuario', $usuario->nombre_usuario ?? '') }}" required>
     </div>
-    <div>
-        <label>Contrasena {{ $esEdicion ? '(dejar vacia para conservar)' : '' }}</label>
-        <input type="password" name="contrasena" {{ ($esEdicion || $generarContrasenaAutomatica) ? '' : 'required' }}>
-    </div>
-    <div>
-        <label>Confirmacion de contrasena</label>
-        <input type="password" name="contrasena_confirmation" {{ ($esEdicion || $generarContrasenaAutomatica) ? '' : 'required' }}>
-    </div>
+    @if($esEdicion)
+        <div>
+            <label>Contrasena (dejar vacia para conservar)</label>
+            <input type="password" name="contrasena">
+        </div>
+        <div>
+            <label>Confirmacion de contrasena</label>
+            <input type="password" name="contrasena_confirmation">
+        </div>
+    @endif
     <div>
         <label>Nombre</label>
         <input name="nombre" value="{{ old('nombre', $usuario->nombre ?? '') }}" required>
@@ -108,15 +144,6 @@
     </div>
 </div>
 
-@if(!$esEdicion)
-    <div style="margin-top: 10px;">
-        <label style="display: inline-flex; align-items: center; gap: 8px; font-weight: 700;">
-            <input type="checkbox" name="generar_contrasena_automatica" value="1" @checked($generarContrasenaAutomatica)>
-            Generar contrasena automatica al guardar
-        </label>
-    </div>
-@endif
-
 <div class="tarjeta {{ $claseBloqueEmpleado }}" id="bloque_empleado_vinculado" style="margin-top: 14px;">
     <h3 style="margin-top: 0;">Empleado vinculado</h3>
     <p style="margin: 0 0 12px; font-size: 13px; color: #607488;">
@@ -178,7 +205,8 @@
         </div>
         <div>
             <label>Salario integrado</label>
-            <input type="number" step="0.01" name="sal_int_empleado" value="{{ old('sal_int_empleado', $empleadoVinculado->sal_int ?? 0) }}">
+            <input type="number" step="0.01" name="sal_int_empleado" value="{{ old('sal_int_empleado', $empleadoVinculado->sal_int ?? 0) }}" readonly>
+            <small style="display:block; margin-top:4px; color:#6b7280;">Se calcula automaticamente con salario diario y antiguedad.</small>
         </div>
         <div>
             <label>% INFONAVIT</label>
